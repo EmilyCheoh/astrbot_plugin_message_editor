@@ -79,7 +79,7 @@ class ConversationState:
     "astrbot_plugin_message_editor",
     "Noir & Felis Abyssalis",
     "在 QQ 中查看、修改或重发最后一轮对话",
-    "1.0.0",
+    "1.0.1",
     "https://github.com/EmilyCheoh/astrbot_plugin_message_editor",
 )
 class MessageEditorPlugin(Star):
@@ -224,15 +224,35 @@ class MessageEditorPlugin(Star):
                 return NO_USER_MESSAGE if parsed.target == "f" else NO_ASSISTANT_MESSAGE
 
             target_message = state.history[target_idx]
-            raw_text = self._extract_text(target_message)
+            if target_role == "user":
+                # AstrBot may keep plugin-generated data, such as the time tag,
+                # in later text blocks. Only the first block is the editable
+                # user body (including XML injected into that same block).
+                raw_text = self._extract_first_text(target_message)
+            else:
+                raw_text = self._extract_text(target_message)
 
             if not parsed.has_payload:
-                return self._raw_text_reply(command, parsed.target, raw_text)
+                await self._send_raw_text_reply(
+                    event,
+                    command,
+                    parsed.target,
+                    raw_text,
+                )
+                return ""
 
             if parsed.payload is None or not parsed.payload.strip():
                 return EMPTY_CONTENT
 
-            if not self._replace_text(target_message, parsed.payload):
+            if target_role == "user":
+                replaced = self._replace_first_text(
+                    target_message,
+                    parsed.payload,
+                )
+            else:
+                replaced = self._replace_text(target_message, parsed.payload)
+
+            if not replaced:
                 return EDIT_FAILED
 
             await self.context.conversation_manager.update_conversation(
@@ -396,6 +416,46 @@ class MessageEditorPlugin(Star):
         return ""
 
     @classmethod
+    def _extract_first_text(cls, message: dict[str, Any]) -> str:
+        """Read only the editable body of a user message.
+
+        Plugin-owned text blocks after the first one (for example
+        <current_date_and_time>) are intentionally excluded.
+        """
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            for block in content:
+                if cls._is_text_block(block):
+                    return block["text"]
+        return ""
+
+    @classmethod
+    def _replace_first_text(
+        cls,
+        message: dict[str, Any],
+        new_text: str,
+    ) -> bool:
+        """Replace the user body while preserving every later block."""
+        content = message.get("content")
+        if isinstance(content, str):
+            message["content"] = new_text
+            return True
+
+        if not isinstance(content, list):
+            return False
+
+        for index, block in enumerate(content):
+            if not cls._is_text_block(block):
+                continue
+            updated = dict(block)
+            updated["text"] = new_text
+            content[index] = updated
+            return True
+        return False
+
+    @classmethod
     def _replace_text(cls, message: dict[str, Any], new_text: str) -> bool:
         content = message.get("content")
         if isinstance(content, str):
@@ -432,16 +492,24 @@ class MessageEditorPlugin(Star):
         )
 
     @staticmethod
-    def _raw_text_reply(command: str, target: str, raw_text: str) -> str:
+    async def _send_raw_text_reply(
+        event: AstrMessageEvent,
+        command: str,
+        target: str,
+        raw_text: str,
+    ) -> None:
         if target == "f":
             who = "主人最后一条消息"
         else:
             who = "Abyss最后一条回复"
-        return (
-            f"主人，咪把{who}在数据库里的完整原文拿来了。"
-            "修改大括号里的内容，再把整条指令发回来就好：🐾\n\n"
-            f"/{command} {target} {{{raw_text}}}"
+
+        intro = (
+            f"主人，咪把{who}在数据库里的正文原文拿来了。"
+            "下一条只放原文，复制、修改后用这条指令发回来：\n"
+            f"/{command} {target} {{新内容}} 🐾"
         )
+        await event.send(event.plain_result(intro))
+        await event.send(event.plain_result(raw_text))
 
     async def terminate(self) -> None:
         """No persistent resources to release."""
