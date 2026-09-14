@@ -1,0 +1,7 @@
+name: astrbot_plugin_message_editor
+display_name: ✏️ Message Editor
+desc: 在 OneBot QQ 私聊中查看、修改或重发最后一轮对话。
+short_desc: 用 /resend、/edit 和 /patch 修改 QQ 对话历史。
+version: v1.0.0
+author: Noir & Felis Abyssalis
+repo: https://github.com/EmilyCheoh/astrbot_plugin_message_editor
