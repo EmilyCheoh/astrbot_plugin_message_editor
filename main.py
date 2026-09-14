@@ -38,8 +38,7 @@ TARGET_ALIASES = {
 }
 
 RESEND_USAGE = (
-    "主人，把修改后的完整内容放进大括号里交给咪吧：\n"
-    "/resend {新内容} 🐈‍⬛"
+    "主人，把修改后的完整内容放进大括号里交给咪吧：🐈‍⬛"
 )
 RESEND_TARGET_USAGE = (
     "主人，`/resend` 只会重发主人的消息，不用写 f：\n"
@@ -156,7 +155,8 @@ class MessageEditorPlugin(Star):
         parsed: ParsedCommand,
     ) -> str:
         if not parsed.has_payload:
-            return RESEND_USAGE
+            await self._send_resend_usage(event)
+            return ""
         if parsed.invalid_target or parsed.target not in (None, "f"):
             return RESEND_TARGET_USAGE
         if parsed.payload is None or not parsed.payload.strip():
@@ -505,11 +505,16 @@ class MessageEditorPlugin(Star):
 
         intro = (
             f"主人，咪把{who}在数据库里的正文原文拿来了。"
-            "下一条只放原文，复制、修改后用这条指令发回来：\n"
-            f"/{command} {target} {{新内容}} 🐾"
+            "修改大括号里的内容，再把整条指令发回来就好——🐈‍⬛"
         )
         await event.send(event.plain_result(intro))
-        await event.send(event.plain_result(raw_text))
+        editable_command = f"/{command} {target} {{{raw_text}}}"
+        await event.send(event.plain_result(editable_command))
+
+    @staticmethod
+    async def _send_resend_usage(event: AstrMessageEvent) -> None:
+        await event.send(event.plain_result(RESEND_USAGE))
+        await event.send(event.plain_result("/resend {新内容}"))
 
     async def terminate(self) -> None:
         """No persistent resources to release."""
